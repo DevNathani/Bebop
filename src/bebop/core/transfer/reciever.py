@@ -1,6 +1,8 @@
 import socket
+from pathlib import Path
 
-from protocol import receive_message
+from bebop.core.transfer.protocol import receive_message
+from bebop.core.utils.hash import calculate_sha256
 
 # Accept request from all network interfaces ( 0.0.0.0 ) allot port 5000 to port
 HOST = "0.0.0.0"
@@ -34,8 +36,10 @@ def main() -> None:
     # recieve file size from custom created recieve message application protocol
     filesize = int(receive_message(connection).decode())
 
+    expected_hash = receive_message(connection).decode()
     print(f"[FILENAME] {filename}")
     print(f"[FILESIZE] {filesize} bytes")
+    print(f"[FILE HASH] {expected_hash}")
 
     # Recieve file data
     received_bytes = 0
@@ -53,6 +57,10 @@ def main() -> None:
             received_bytes += len(chunk)
 
             print(f"[PROGRESS] {received_bytes}/{filesize}")
+
+    calculated_hash = calculate_sha256(Path(OUTPUT_FILE))
+    if calculated_hash == expected_hash:
+        print("INTEGRITY VALID")
 
     print("[SUCCESS] File received")
 

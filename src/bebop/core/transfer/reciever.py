@@ -1,90 +1,110 @@
 import socket
 from pathlib import Path
 
+from bebop.config.config import PORT, RECIEVED_DIR, SERVER_HOST
 from bebop.core.transfer.protocol import receive_message
 from bebop.core.utils.hash import calculate_sha256
-
-# Accept request from all network interfaces ( 0.0.0.0 ) allot port 5000 to port
-HOST = "0.0.0.0"
-PORT = 5000
+from bebop.core.utils.logger import logger
 
 # Named Recieved Directory
-RECIEVED_DIR = "received"
-recieved_path = Path(RECIEVED_DIR)
-recieved_path.mkdir(exist_ok=True)
+
+RECIEVED_DIR.mkdir(exist_ok=True)
+
+connection = None
 
 
 def main() -> None:
-    # creating a socket
-    # ( AF_INET defines IPv4 Addressing and SOCK_STREAM defines the TCP )
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        # creating a socket
+        # ( AF_INET defines IPv4 Addressing and SOCK_STREAM defines the TCP )
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    # Binding the PORT and HOST to application
-    server_socket.bind((HOST, PORT))
+        # Binding the PORT and HOST to application
+        server_socket.bind((SERVER_HOST, PORT))
 
-    # Accept Connections through this socket
-    server_socket.listen(1)
+        # Accept Connections through this socket
+        server_socket.listen(1)
 
-    print(f"[LISTENING] Receiver listening on port {PORT}")
+        print(f"[LISTENING] Receiver listening on port {PORT}")
 
-    # Create a new connection socket after accepting request from sender
-    connection, address = server_socket.accept()
+        # Create a new connection socket after accepting request from sender
+        connection, address = server_socket.accept()
+        logger.info(f"[CONNECTED] Client connected from {address}")
+        print(f"[CONNECTED] Client connected from {address}")
 
-    print(f"[CONNECTED] Client connected from {address}")
+        # Recieve Every file
+        while True:
+            # recieve file name from custom created recieve message application protocol
+            filename = receive_message(connection).decode()
 
-    # Recieve Every file
-    while True:
-        # recieve file name from custom created recieve message application protocol
-        filename = receive_message(connection).decode()
+            # Stop recieving when END file is recieved
+            if filename == "END":
+                print("SESSION CLOSED")
+                break
 
-        # Stop recieving when END file is recieved
-        if filename == "END":
-            print("SESSION CLOSED")
-            break
+            # concatenate filepath
+            output_path = RECIEVED_DIR / filename
 
-        # concatenate filepath
-        output_path = recieved_path / filename
+            # recieve file size from custom created recieve message application protocol
+            filesize = int(receive_message(connection).decode())
 
-        # recieve file size from custom created recieve message application protocol
-        filesize = int(receive_message(connection).decode())
+            # Recieve HAsh for Integrity Check
+            expected_hash = receive_message(connection).decode()
+            print(f"[FILENAME] {filename}")
+            print(f"[FILESIZE] {filesize} bytes")
+            print(f"[FILE HASH] {expected_hash}")
 
-        # Recieve HAsh for Integrity Check
-        expected_hash = receive_message(connection).decode()
-        print(f"[FILENAME] {filename}")
-        print(f"[FILESIZE] {filesize} bytes")
-        print(f"[FILE HASH] {expected_hash}")
+            # Recieve file data
+            received_bytes = 0
 
-        # Recieve file data
-        received_bytes = 0
+            with open(output_path, "wb") as file:
+                while received_bytes < filesize:
+                    # recieve upto pending bytes or max 1024
+                    chunk = connection.recv(min(1024, filesize - received_bytes))
 
-        with open(output_path, "wb") as file:
-            while received_bytes < filesize:
-                # recieve upto pending bytes or max 1024
-                chunk = connection.recv(min(1024, filesize - received_bytes))
+                    if not chunk:
+                        raise ConnectionError("Connection lost during file transfer")
 
-                if not chunk:
-                    raise ConnectionError("Connection lost during file transfer")
+                    file.write(chunk)  # Write to file
 
-                file.write(chunk)  # Write to file
+                    received_bytes += len(chunk)
 
-                received_bytes += len(chunk)
+                    progress = (received_bytes / filesize) * 100
+                    logger.info(f"[RECIEVING] {filename}")
+                    print(f"[{filename}] : {progress:.2f}%", end="\r")
 
-                progress = (received_bytes / filesize) * 100
-                print(f"[{filename}] : {progress:.2f}%", end="\r")
+            print()
 
-        print()
+            # Check file integrity
+            calculated_hash = calculate_sha256(Path(output_path))
+            if calculated_hash == expected_hash:
+                print("INTEGRITY VALID")
+            else:
+                print("INTEGRITY FAILED")
 
-        # Check file integrity
-        calculated_hash = calculate_sha256(Path(output_path))
-        if calculated_hash == expected_hash:
-            print("INTEGRITY VALID")
-        else:
-            print("INTEGRITY FAILED")
+            print("[SUCCESS] File received")
+            logger.info(f"[SUCCESS] File Recieved {filename}")
 
-        print("[SUCCESS] File received")
+        connection.close()
+        server_socket.close()
+        logger.info("[SESSION CLOSED]")
 
-    connection.close()
-    server_socket.close()
+    except ConnectionError:
+        print("[ERROR] Connection Lost")
+        logger.error("[ERROR] Connection Lost")
+
+    except KeyboardInterrupt:
+        print("\n[STOPPED] User Interruption")
+        logger.error("\n[STOPPED] User Interruption")
+    except Exception as error:
+        print(f"[ERROR] {error}")
+        logger.error(str(error))
+
+    finally:
+        if connection:
+            connection.close()
+        server_socket.close()
+        logger.info("[SESSION CLOSED]")
 
 
 if __name__ == "__main__":

@@ -8,8 +8,10 @@ from bebop.core.utils.hash import calculate_sha256
 HOST = "0.0.0.0"
 PORT = 5000
 
-# named the recieved file
-OUTPUT_FILE = "received_sample.txt"
+# Named Recieved Directory
+RECIEVED_DIR = "received"
+recieved_path = Path(RECIEVED_DIR)
+recieved_path.mkdir(exist_ok=True)
 
 
 def main() -> None:
@@ -30,39 +32,56 @@ def main() -> None:
 
     print(f"[CONNECTED] Client connected from {address}")
 
-    # recieve file name from custom created recieve message application protocol
-    filename = receive_message(connection).decode()
+    # Recieve Every file
+    while True:
+        # recieve file name from custom created recieve message application protocol
+        filename = receive_message(connection).decode()
 
-    # recieve file size from custom created recieve message application protocol
-    filesize = int(receive_message(connection).decode())
+        # Stop recieving when END file is recieved
+        if filename == "END":
+            print("SESSION CLOSED")
+            break
 
-    expected_hash = receive_message(connection).decode()
-    print(f"[FILENAME] {filename}")
-    print(f"[FILESIZE] {filesize} bytes")
-    print(f"[FILE HASH] {expected_hash}")
+        # concatenate filepath
+        output_path = recieved_path / filename
 
-    # Recieve file data
-    received_bytes = 0
+        # recieve file size from custom created recieve message application protocol
+        filesize = int(receive_message(connection).decode())
 
-    with open(OUTPUT_FILE, "wb") as file:
-        while received_bytes < filesize:
-            # recieve upto pending bytes or max 1024
-            chunk = connection.recv(min(1024, filesize - received_bytes))
+        # Recieve HAsh for Integrity Check
+        expected_hash = receive_message(connection).decode()
+        print(f"[FILENAME] {filename}")
+        print(f"[FILESIZE] {filesize} bytes")
+        print(f"[FILE HASH] {expected_hash}")
 
-            if not chunk:
-                raise ConnectionError("Connection lost during file transfer")
+        # Recieve file data
+        received_bytes = 0
 
-            file.write(chunk)  # Write to file
+        with open(output_path, "wb") as file:
+            while received_bytes < filesize:
+                # recieve upto pending bytes or max 1024
+                chunk = connection.recv(min(1024, filesize - received_bytes))
 
-            received_bytes += len(chunk)
+                if not chunk:
+                    raise ConnectionError("Connection lost during file transfer")
 
-            print(f"[PROGRESS] {received_bytes}/{filesize}")
+                file.write(chunk)  # Write to file
 
-    calculated_hash = calculate_sha256(Path(OUTPUT_FILE))
-    if calculated_hash == expected_hash:
-        print("INTEGRITY VALID")
+                received_bytes += len(chunk)
 
-    print("[SUCCESS] File received")
+                progress = (received_bytes / filesize) * 100
+                print(f"[{filename}] : {progress:.2f}%", end="\r")
+
+        print()
+
+        # Check file integrity
+        calculated_hash = calculate_sha256(Path(output_path))
+        if calculated_hash == expected_hash:
+            print("INTEGRITY VALID")
+        else:
+            print("INTEGRITY FAILED")
+
+        print("[SUCCESS] File received")
 
     connection.close()
     server_socket.close()

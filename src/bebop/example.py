@@ -1,5 +1,0 @@
-def add(a: int, b: int) -> int:
-    return a + b
-
-
-add(4, 5)

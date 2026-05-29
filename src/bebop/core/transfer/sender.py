@@ -4,16 +4,27 @@ from bebop.config.config import CHUNK_SIZE, CLIENT_HOST, PORT, TRANSFER_DIR
 from bebop.core.transfer.protocol import create_message
 from bebop.core.utils.hash import calculate_sha256
 from bebop.core.utils.logger import logger
+from bebop.events.bus import emit, subscribe
+from bebop.events.models import Event
+from bebop.ui.rich_cli.renderer import handle_event
 
 
 def main() -> None:
     try:
+        subscribe(handle_event)
         # creating a socket
         # ( AF_INET defines IPv4 Addressing and SOCK_STREAM defines the TCP )
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         # Perform the 3 way TCP Handshake
         client_socket.connect((CLIENT_HOST, PORT))
+
+        emit(
+            Event(
+                event_type="success",
+                data={"message": f"Connected to {CLIENT_HOST} : {PORT}"},
+            )
+        )
 
         logger.info(f"Connected to {CLIENT_HOST} : {PORT}")
 
@@ -29,6 +40,7 @@ def main() -> None:
             file_hash = calculate_sha256(file_path)
 
             logger.info(f"[FILE] {file_name}")
+
             print(f"[FILE] {file_name}")
             print(f"[FILE SIZE] {file_size} bytes")
             print(f"[FILE SIZE] {type(file_size)} bytes")
@@ -52,7 +64,13 @@ def main() -> None:
                     progress = (send_bytes / file_size) * 100
                     print(f"[{file_name}] : [{progress:.2f}]%")
 
-            print("[SUCCESS] File transferred")
+            emit(
+                Event(
+                    event_type="success",
+                    data={"message": "File Transfered"},
+                )
+            )
+
             logger.info(f"[SUCCESS] {file_name} transferred")
 
         # Send END package to mark end of directory
@@ -72,11 +90,13 @@ def main() -> None:
         logger.error("[STOPPED] ABORTED by User")
         print("\n Aborted by User")
     except Exception as error:
+        emit(Event(event_type="error", data={"message": f"[ERROR] {error}"}))
         logger.error(str(error))
-        print(f"[ERROR] {error}")
+        # print(f"[ERROR] {error}")
 
     finally:
         client_socket.close()
+        emit(Event(event_type="info", data={"message": "[Session Closed]"}))
         logger.info("[SESSION CLOSED]")
 
 

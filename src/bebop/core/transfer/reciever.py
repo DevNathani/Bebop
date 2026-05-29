@@ -5,16 +5,17 @@ from bebop.config.config import PORT, RECIEVED_DIR, SERVER_HOST
 from bebop.core.transfer.protocol import receive_message
 from bebop.core.utils.hash import calculate_sha256
 from bebop.core.utils.logger import logger
-
-# Named Recieved Directory
+from bebop.events.bus import emit, subscribe
+from bebop.events.models import Event
+from bebop.ui.rich_cli.renderer import handle_event
 
 RECIEVED_DIR.mkdir(exist_ok=True)
 
-connection = None
-
 
 def main() -> None:
+    connection = None
     try:
+        subscribe(handle_event)
         # creating a socket
         # ( AF_INET defines IPv4 Addressing and SOCK_STREAM defines the TCP )
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -24,13 +25,23 @@ def main() -> None:
 
         # Accept Connections through this socket
         server_socket.listen(1)
-
-        print(f"[LISTENING] Receiver listening on port {PORT}")
+        emit(
+            Event(
+                event_type="info",
+                data={"message": f"[LISTENING] Reciever listening on port {PORT}"},
+            )
+        )
 
         # Create a new connection socket after accepting request from sender
         connection, address = server_socket.accept()
         logger.info(f"[CONNECTED] Client connected from {address}")
-        print(f"[CONNECTED] Client connected from {address}")
+
+        emit(
+            Event(
+                event_type="info",
+                data={"message": f"[CONNECTED] Client connected from {address}"},
+            )
+        )
 
         # Recieve Every file
         while True:
@@ -82,7 +93,13 @@ def main() -> None:
             else:
                 print("INTEGRITY FAILED")
 
-            print("[SUCCESS] File received")
+            # print("[SUCCESS] File received")
+            emit(
+                Event(
+                    event_type="success",
+                    data={"message": f"[SUCCESS] File Recieved {filename}"},
+                )
+            )
             logger.info(f"[SUCCESS] File Recieved {filename}")
 
         connection.close()
@@ -90,7 +107,8 @@ def main() -> None:
         logger.info("[SESSION CLOSED]")
 
     except ConnectionError:
-        print("[ERROR] Connection Lost")
+        # print("[ERROR] Connection Lost")
+        emit(Event(event_type="error", data={"message": "[ERROR] Connection Lost"}))
         logger.error("[ERROR] Connection Lost")
 
     except KeyboardInterrupt:
@@ -104,6 +122,7 @@ def main() -> None:
         if connection:
             connection.close()
         server_socket.close()
+        emit(Event(event_type="info", data={"message": "[Session Closed]"}))
         logger.info("[SESSION CLOSED]")
 
 

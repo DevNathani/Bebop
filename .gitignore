@@ -26,6 +26,6 @@ wheels/
 .DS_Store
 Thumbs.db
 
-transfer/
-recieved/
-logs
+data/
+shared/
+bebop.db

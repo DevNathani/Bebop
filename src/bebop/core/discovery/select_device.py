@@ -3,7 +3,7 @@ from bebop.core.discovery.scanner import (
 )
 
 
-def select_device() -> str:
+def select_device() -> tuple[str, str]:
     """
     Discover devices and let user select one.
     Returns selected IP address.
@@ -20,4 +20,4 @@ def select_device() -> str:
 
     print(f"\nSelected: {hostname} ({ip})")
 
-    return ip
+    return (hostname, ip)

@@ -1,8 +1,9 @@
 import json
-from pathlib import Path
+
+from bebop.config.config import DATA_DIR
 
 # Directory to store checkpoint files
-CHECKPOINT_DIR = Path("checkpoints")
+CHECKPOINT_DIR = DATA_DIR / "checkpoints"
 CHECKPOINT_DIR.mkdir(exist_ok=True)
 
 

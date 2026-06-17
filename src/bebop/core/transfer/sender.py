@@ -7,6 +7,9 @@ from bebop.config.config import (
     TRANSFER_DIR,
 )
 from bebop.core.discovery.select_device import select_device
+from bebop.core.history.db import init_db
+from bebop.core.history.devices import upsert_device
+from bebop.core.history.sent_files import save_sent_file
 from bebop.core.transfer.protocol import create_message, receive_message
 from bebop.core.transfer.request import (
     receive_response,
@@ -21,11 +24,13 @@ from bebop.ui.rich_cli.renderer import handle_event
 
 def main() -> None:
     try:
+        init_db()
         subscribe(handle_event)
         # creating a socket
         # ( AF_INET defines IPv4 Addressing and SOCK_STREAM defines the TCP )
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        TARGET_IP = select_device()
+        TARGET_HOSTNAME, TARGET_IP = select_device()
+
         # Perform the 3 way TCP Handshake
         client_socket.connect((TARGET_IP, PORT))
 
@@ -78,7 +83,10 @@ def main() -> None:
                 data={"message": "Transfer Accepted"},
             )
         )
-
+        upsert_device(
+            hostname=TARGET_HOSTNAME,
+            ip_address=TARGET_IP,
+        )
         # Iterate over all files in TRANSFER_DIR/
         for file_path in TRANSFER_DIR.iterdir():
             if not file_path.is_file():
@@ -150,7 +158,14 @@ def main() -> None:
                     data={"message": "File Transfered"},
                 )
             )
-
+            save_sent_file(
+                filename=file_name,
+                size=file_size,
+                receiver_name=TARGET_HOSTNAME,
+                receiver_ip=TARGET_IP,
+                status="success",
+            )
+            print(f"[HISTORY SAVED] {file_name}")
             logger.info(f"[SUCCESS] {file_name} transferred")
 
         # Send END package to mark end of directory
@@ -170,12 +185,22 @@ def main() -> None:
         logger.error("[STOPPED] ABORTED by User")
         print("\n Aborted by User")
     except Exception as error:
+        if "file_name" in locals():
+            save_sent_file(
+                filename=file_name,
+                size=file_size,
+                receiver_name=TARGET_HOSTNAME,
+                receiver_ip=TARGET_IP,
+                status="success",
+            )
+
         emit(Event(event_type="error", data={"message": f"[ERROR] {error}"}))
+
         logger.error(str(error))
-        # print(f"[ERROR] {error}")
 
     finally:
-        client_socket.close()
+        if "client_socket" in locals():
+            client_socket.close()
         emit(Event(event_type="info", data={"message": "[Session Closed]"}))
         logger.info("[SESSION CLOSED]")
 

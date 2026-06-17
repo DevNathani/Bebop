@@ -9,6 +9,9 @@ from bebop.config.config import (
     SERVER_HOST,
 )
 from bebop.core.discovery.listener import start_listener
+from bebop.core.history.db import init_db
+from bebop.core.history.devices import upsert_device
+from bebop.core.history.received_files import save_received_file
 from bebop.core.transfer.protocol import create_message, receive_message
 from bebop.core.transfer.request import (
     receive_transfer_request,
@@ -32,6 +35,7 @@ RECIEVED_DIR.mkdir(exist_ok=True)
 def main() -> None:
     connection = None
     try:
+        init_db()
         subscribe(handle_event)
         discovery_thread = threading.Thread(
             target=start_listener,
@@ -57,6 +61,7 @@ def main() -> None:
 
         # Create a new connection socket after accepting request from sender
         connection, address = server_socket.accept()
+        SENDER_IP = address[0]
         logger.info(f"[CONNECTED] Client connected from {address}")
 
         emit(
@@ -101,8 +106,12 @@ def main() -> None:
             return
 
         send_accept(connection)
-
+        upsert_device(
+            hostname=sender_name,
+            ip_address=SENDER_IP,
+        )
         print("Transfer Accepted")
+
         # Recieve Every file
         while True:
             # recieve file name from custom created recieve message application protocol
@@ -175,8 +184,23 @@ def main() -> None:
             if calculated_hash == expected_hash:
                 print(f"Deleting {filename} checkpoint")
                 delete_checkpoint(filename)
+                print(type(SENDER_IP))
+                save_received_file(
+                    filename=filename,
+                    size=filesize,
+                    sender_name=sender_name,
+                    sender_ip=SENDER_IP,
+                    status="success",
+                )
                 print("INTEGRITY VALID")
             else:
+                save_received_file(
+                    filename=filename,
+                    size=filesize,
+                    sender_name=sender_name,
+                    sender_ip=SENDER_IP,
+                    status="failed",
+                )
                 print("INTEGRITY FAILED")
 
             # print("[SUCCESS] File received")
@@ -207,7 +231,8 @@ def main() -> None:
     finally:
         if connection:
             connection.close()
-        server_socket.close()
+        if "server_socket" in locals():
+            server_socket.close()
         emit(Event(event_type="info", data={"message": "[Session Closed]"}))
         logger.info("[SESSION CLOSED]")
 
